@@ -1,8 +1,9 @@
-#load "dynlink.cma" 
-#load "camlp4/camlp4o.cma" 
+#load "dynlink.cma";;
+#load "camlp4/camlp4o.cma";;
 
 type oper2 = 
   | Moins
+  | Plus
 
 type expr = 
   | Int of int
@@ -12,11 +13,13 @@ let rec eval e =
   match e with
   | Int n -> n
   | Op2 (Moins, x, y) -> eval x - eval y
+  | Op2 (Plus, x, y) -> eval x + eval y
 
 (* Impression avec toutes les parenthèses explicites *)
 let string_oper2 o =
   match o with
   | Moins -> "-"
+  | Plus -> "+"
 
 let rec print_expr e =
   match e with
@@ -50,6 +53,7 @@ let _ = horner 0 (Stream.of_string "45089")
 type token = 
   | Tent of int
   | Tmoins
+  | Tplus
 
 (* 
 Pour passer d'un flot de caractères à un flot de lexèmes,
@@ -70,6 +74,7 @@ let rec next_token = parser
   | [< '  ' '|'\n'; tk = next_token >] -> tk (* élimination des espaces *)
   | [< '  '0'..'9' as c; n = horner (valchiffre c) >] -> Some (Tent (n))
   | [< '  '-' >] -> Some (Tmoins)
+  | [< '  '+' >] -> Some (Tplus)
   | [< >] -> None
 
 (* tests *)
@@ -123,6 +128,7 @@ let rec p_expr = parser
   | [< t = p_terme; e = p_s_add t >] -> e
 and p_s_add a = parser 
   | [< ' Tmoins; t = p_terme; e = p_s_add (Op2(Moins,a,t)) >] -> e
+  | [< ' Tplus; t = p_terme; e = p_s_add (Op2(Plus,a,t)) >] -> e                  
   | [< >] -> a
 and p_terme = parser 
     | [< ' Tent(n)>] -> Int(n)
@@ -133,3 +139,10 @@ let e1 = ast "41 - 20 - 1 "
      
 let _ = eval e1
 let _ = print_expr e1
+
+
+let e2 = ast "2 + 2 "
+
+let _ = print_expr e2
+
+let _ = eval e2
