@@ -44,8 +44,8 @@ let rec print_expr e =
 
 (* Pour le test *)
 let rec list_of_stream = parser
-  | [< 'x; l = list_of_stream >] -> x :: l
-  | [< >] -> []
+                       | [< 'x; l = list_of_stream >] -> x :: l
+                       | [< >] -> []
 
 (* ANALYSEUR LEXICAL sur un flot de caractères *)
 	      
@@ -54,6 +54,10 @@ let valchiffre c = int_of_char c - int_of_char '0'
 let rec horner n = parser 
   | [< '  '0'..'9' as c; s >] -> horner (10 * n + valchiffre c) s
   | [< >] -> n
+
+let rec chaine c = parser
+                 | [< '  'a'..'z'|'A'..'Z' as n; s >] -> chaine c@[n] s
+                 | [< >] -> c
            
 (* test *)
 let _ = horner 0 (Stream.of_string "45089")
@@ -67,7 +71,7 @@ type token =
   | Tparferme
   | Tmul
   | Tdiv
-  | Tid of bytes
+  | Tid of char list
 
 (* 
 Pour passer d'un flot de caractères à un flot de lexèmes,
@@ -93,6 +97,7 @@ let rec next_token = parser
   | [< '  ')' >] -> Some (Tparferme)
   | [< '  '*' >] -> Some (Tmul)
   | [< '  '/' >] -> Some (Tdiv)
+  | [< '  'a'..'z' | 'A'..'Z' as c; s = chaine c >] -> Some (Tid (s))
   | [< >] -> None
 
 (* tests *)
