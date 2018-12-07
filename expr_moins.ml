@@ -1,26 +1,38 @@
-#load "dynlink.cma" 
-#load "camlp4/camlp4o.cma" 
+#load "dynlink.cma";;
+#load "camlp4/camlp4o.cma" ;;
 
 type oper2 = 
   | Moins
+  | Plus
+  | Mul
+  | Div
 
 type expr = 
   | Int of int
   | Op2 of oper2 * expr * expr
+  | Bool of bool
 
 let rec eval e =
   match e with
   | Int n -> n
+  | Bool b -> b
   | Op2 (Moins, x, y) -> eval x - eval y
+  | Op2 (Plus, x, y) -> eval x + eval y
+  | Op2 (Mul, x, y) -> eval x * eval y
+  | Op2 (Div, x, y) -> eval x / eval y
 
 (* Impression avec toutes les parenthèses explicites *)
 let string_oper2 o =
   match o with
   | Moins -> "-"
+  | Plus -> "+"
+  | Mul -> "*"
+  | Div -> "/"
 
 let rec print_expr e =
   match e with
   | Int n -> print_int n
+  | Bool b -> print_string (string_of_bool b)
   | Op2 (o, x, y) ->
      (print_char '(';
       print_expr x;
@@ -42,7 +54,7 @@ let valchiffre c = int_of_char c - int_of_char '0'
 let rec horner n = parser 
   | [< '  '0'..'9' as c; s >] -> horner (10 * n + valchiffre c) s
   | [< >] -> n
-
+           
 (* test *)
 let _ = horner 0 (Stream.of_string "45089")
 
@@ -50,6 +62,12 @@ let _ = horner 0 (Stream.of_string "45089")
 type token = 
   | Tent of int
   | Tmoins
+  | Tplus
+  | Tparouvre
+  | Tparferme
+  | Tmul
+  | Tdiv
+  | Tid of bytes
 
 (* 
 Pour passer d'un flot de caractères à un flot de lexèmes,
@@ -70,6 +88,11 @@ let rec next_token = parser
   | [< '  ' '|'\n'; tk = next_token >] -> tk (* élimination des espaces *)
   | [< '  '0'..'9' as c; n = horner (valchiffre c) >] -> Some (Tent (n))
   | [< '  '-' >] -> Some (Tmoins)
+  | [< '  '+' >] -> Some (Tplus)
+  | [< '  '(' >] -> Some (Tparouvre)
+  | [< '  ')' >] -> Some (Tparferme)
+  | [< '  '*' >] -> Some (Tmul)
+  | [< '  '/' >] -> Some (Tdiv)
   | [< >] -> None
 
 (* tests *)
@@ -120,16 +143,26 @@ let ltk1 = list_of_stream (lex (Stream.of_string "356 - 10 - 4"))
 *)
 
 let rec p_expr = parser
-  | [< t = p_terme; e = p_s_add t >] -> e
+               | [< t = p_terme; e = p_s_add t >] -> e
 and p_s_add a = parser 
-  | [< ' Tmoins; t = p_terme; e = p_s_add (Op2(Moins,a,t)) >] -> e
-  | [< >] -> a
-and p_terme = parser 
-    | [< ' Tent(n)>] -> Int(n)
+              | [< ' Tmoins; t = p_terme; e = p_s_add (Op2(Moins,a,t)) >] -> e
+              | [< ' Tplus; t = p_terme; e = p_s_add (Op2(Plus,a,t)) >] -> e
+              | [< >] -> a
+and p_terme = parser
+            | [< p = p_fact; e = p_s_mul p >] -> e
 
+and p_s_mul a = parser
+              | [< ' Tmul; t = p_fact; e = p_s_mul (Op2(Mul,a,t)) >] -> e
+              | [< ' Tdiv; t = p_fact; e = p_s_mul (Op2(Div,a,t)) >] -> e
+              | [< >] -> a
+
+and p_fact = parser
+            | [< ' Tent(n)>] -> Int(n)
+            | [< ' Tparouvre; exp = p_expr; ' Tparferme>] -> exp
+      
 let ast s = p_expr (lex (Stream.of_string s))
 
-let e1 = ast "41 - 20 - 1 "
+let e1 = ast "1 - 2 * ( 4 + 6 / 2 )"
      
 let _ = eval e1
 let _ = print_expr e1
