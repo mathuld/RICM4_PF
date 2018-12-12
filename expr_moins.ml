@@ -1,34 +1,68 @@
 #load "dynlink.cma";;
 #load "camlp4/camlp4o.cma" ;;
 
+(** Environnement fonctionnel **)
+(* Un nom de variable est associé à une valeur *)
+type env = (string*int) list
+
+(* Retourne la valeur de la variable s dans l'environnement l *)
+(* Si un même nom est utilisé, c'est la valeur la plus récente qui sera retournée *)
+let rec get s l =
+  match l with
+  |[] -> failwith "Identifieur inconnu"
+  |(id,va)::q -> if (id = s) then va else get s q 
+         
 type oper2 = 
   | Moins
   | Plus
   | Mul
   | Div
+  | Ou
+  | Et
+  | Egal
+
+type oper1 =
+  | Non
 
 type expr = 
   | Int of int
+  | Op1 of oper1 * expr
   | Op2 of oper2 * expr * expr
   | Bool of bool
-
-let rec eval e =
-  match e with
+  | IfThenElse of expr * expr * expr 
+  | LetIn of string * expr * expr
+  | Var of string
+                
+let rec eval exp env =
+  match exp with
   | Int n -> n
-  | Bool b -> b
-  | Op2 (Moins, x, y) -> eval x - eval y
-  | Op2 (Plus, x, y) -> eval x + eval y
-  | Op2 (Mul, x, y) -> eval x * eval y
-  | Op2 (Div, x, y) -> eval x / eval y
-
-(* Impression avec toutes les parenthèses explicites *)
+  | Bool b -> if b then 1 else 0
+  | Op2 (Moins, x, y) -> eval x env - eval y env
+  | Op2 (Plus, x, y) -> eval x env + eval y env
+  | Op2 (Mul, x, y) -> eval x env * eval y env
+  | Op2 (Div, x, y) -> eval x env/ eval y env
+  | Op2 (Ou, x, y) -> if ((eval x env) == 1) || ((eval y env) == 1) then 1 else 0 
+  | Op2 (Et, x, y) -> if ((eval x env) == 1) && ((eval y env) == 1) then 1 else 0 
+  | Op1 (Non, x) -> if ((eval x env) == 1) then 0 else 1 
+  | Op2 (Egal, x, y) -> if ((eval x env) == (eval y env)) then 1 else 0 
+  | IfThenElse (cond,x,y) -> if ((eval cond env)==1) then (eval x env) else (eval y env)
+  | LetIn(v,x,y) -> let var = (eval x env) in eval y ((v,var)::env)
+  | Var(v) -> get v env
+                 
 let string_oper2 o =
   match o with
   | Moins -> "-"
   | Plus -> "+"
   | Mul -> "*"
   | Div -> "/"
+  | Ou -> " | "
+  | Et -> " & "
+  | Egal -> " = "
 
+let string_oper1 o =
+  match o with
+  | Non -> "!"
+          
 let rec print_expr e =
   match e with
   | Int n -> print_int n
@@ -39,28 +73,65 @@ let rec print_expr e =
       print_string (string_oper2 o);
       print_expr y;
       print_char ')')
+  | Op1 (o,x) ->
+     (print_char '(';
+      print_string (string_oper1 o);
+      print_expr x;
+      print_char ')')
+  |IfThenElse (c,x,y) ->
+     (print_string ("if ");
+      print_expr c;
+      print_string (" then {");
+      print_expr x;
+      print_string ("} else {");
+      print_expr y;
+      print_char '}')
+  | LetIn (v,x,y) ->
+     (print_string ("let ");
+      print_string v;
+      print_string (" = ");
+      print_expr x;
+      print_string (" in ");
+      print_expr y)
+  | Var(v) ->
+     (print_string v)
 
-(* FLOTS *)
+      (* FLOTS *)
 
 (* Pour le test *)
 let rec list_of_stream = parser
-                       | [< 'x; l = list_of_stream >] -> x :: l
-                       | [< >] -> []
+  | [< 'x; l = list_of_stream >] -> x :: l
+  | [< >] -> []
 
 (* ANALYSEUR LEXICAL sur un flot de caractères *)
 	      
 (* Schéma de Horner *)
+let chiffre = parser  [<'  '0'..'9' as x >] -> x
+
 let valchiffre c = int_of_char c - int_of_char '0'
 let rec horner n = parser 
-  | [< '  '0'..'9' as c; s >] -> horner (10 * n + valchiffre c) s
+  | [< c = chiffre ; s >] -> horner (10 * n + valchiffre c) s
   | [< >] -> n
 
-let rec chaine c = parser
-                 | [< '  'a'..'z'|'A'..'Z' as n; s >] -> chaine c@[n] s
-                 | [< >] -> c
-           
-(* test *)
-let _ = horner 0 (Stream.of_string "45089")
+let lettre = parser  [< ''a'..'z' | 'A'..'Z' as x >] -> x  
+let alphanum = parser
+  | [< x = lettre >] -> x
+  | [< x = chiffre >] -> x
+
+let rec lettres = parser
+  | [<  x = alphanum; l = lettres >] -> x::l;
+  | [< >] -> []
+
+let rec lettres_to_bytes (l : char list) (i : int) (b : bytes) : string =
+  match l with
+  | []   -> Bytes.to_string b
+  | x::q -> Bytes.set b i x ; lettres_to_bytes q (i+1) b  
+
+let ident c = parser
+  | [< l = lettres>] -> 
+  let b = Bytes.make ((List.length l)+1) c in
+  (lettres_to_bytes l 1 b)
+
 
 (* Type des lexèmes *)
 type token = 
@@ -71,8 +142,17 @@ type token =
   | Tparferme
   | Tmul
   | Tdiv
-  | Tid of char list
-
+  | Tbool of bool  
+  | Tou
+  | Tet
+  | Tnon
+  | Tsi
+  | Tsinon
+  | Talors
+  | Tegal
+  | Tident of string
+  | Tsoit
+  | Tdans
 (* 
 Pour passer d'un flot de caractères à un flot de lexèmes,
 on commence par une fonction qui analyse lexicalement les
@@ -87,7 +167,19 @@ type 'a option =
   | None           (* indique l'absence de valeur *)
   | Some of 'a     (* indique la présence de valeur *)
 *)
-      
+
+let id_to_token id =
+  match id with
+  | "vrai" -> Tbool(true)
+  | "faux" -> Tbool(false)
+  | "non" -> Tnon
+  | "si" -> Tsi
+  | "alors" -> Talors
+  | "sinon" -> Tsinon
+  | "soit" -> Tsoit
+  | "dans" -> Tdans
+  | str -> Tident(str) 
+
 let rec next_token = parser
   | [< '  ' '|'\n'; tk = next_token >] -> tk (* élimination des espaces *)
   | [< '  '0'..'9' as c; n = horner (valchiffre c) >] -> Some (Tent (n))
@@ -97,7 +189,10 @@ let rec next_token = parser
   | [< '  ')' >] -> Some (Tparferme)
   | [< '  '*' >] -> Some (Tmul)
   | [< '  '/' >] -> Some (Tdiv)
-  | [< '  'a'..'z' | 'A'..'Z' as c; s = chaine c >] -> Some (Tid (s))
+  | [< '  '&'; '  '&'>] -> Some (Tet)
+  | [< '  '|'; '  '|'>] -> Some (Tou)
+  | [< '  '='>] -> Some (Tegal)
+  | [<  l = lettre; s = (ident l) >] -> Some (id_to_token s)
   | [< >] -> None
 
 (* tests *)
@@ -148,26 +243,44 @@ let ltk1 = list_of_stream (lex (Stream.of_string "356 - 10 - 4"))
 *)
 
 let rec p_expr = parser
-               | [< t = p_terme; e = p_s_add t >] -> e
+               | [< 'Tsi ; e1 = p_expr ; 'Talors ; e2 = p_expr ; 'Tsinon ; e3 = p_expr >] -> IfThenElse (e1,e2,e3)
+               | [< 'Tsoit ; 'Tident(v) ; 'Tegal ; e1 = p_expr ; 'Tdans ; e2 = p_expr >] -> LetIn(v,e1,e2)
+     | [< c = p_conj ; sd = p_s_disj c >] -> sd                                      
+and p_s_disj c = parser
+     | [< 'Tou ; p = p_conj ; sd = p_s_disj (Op2(Ou,c,p))>] -> sd
+     | [< >] -> c
+and p_conj = parser
+     | [< l = p_litt ; c = p_s_conj l>] -> c
+and p_s_conj c = parser
+     | [< 'Tet ; p = p_litt ; sc = p_s_conj (Op2(Et,c,p)) >] -> sc
+     | [< >] -> c           
+and p_litt = parser
+     | [< 'Tnon ; p = p_litt>] -> Op1(Non,p)
+     | [< ec = p_expr_comp; cmp = p_comp ec >] -> cmp
+and p_comp e = parser
+     |[< 'Tegal ; ec = p_expr_comp>] -> (Op2(Egal,e,ec))
+     |[< >] -> e
+and p_expr_comp = parser
+     | [< t = p_terme; e = p_s_add t >] -> e
 and p_s_add a = parser 
-              | [< ' Tmoins; t = p_terme; e = p_s_add (Op2(Moins,a,t)) >] -> e
-              | [< ' Tplus; t = p_terme; e = p_s_add (Op2(Plus,a,t)) >] -> e
-              | [< >] -> a
+     | [< ' Tmoins; t = p_terme; e = p_s_add (Op2(Moins,a,t)) >] -> e
+     | [< ' Tplus; t = p_terme; e = p_s_add (Op2(Plus,a,t)) >] -> e
+     | [< >] -> a
 and p_terme = parser
-            | [< p = p_fact; e = p_s_mul p >] -> e
-
+     | [< f = p_fact; sm = p_s_mul f >] -> sm
 and p_s_mul a = parser
-              | [< ' Tmul; t = p_fact; e = p_s_mul (Op2(Mul,a,t)) >] -> e
-              | [< ' Tdiv; t = p_fact; e = p_s_mul (Op2(Div,a,t)) >] -> e
-              | [< >] -> a
-
+     | [< ' Tmul; t = p_fact; e = p_s_mul (Op2(Mul,a,t)) >] -> e
+     | [< ' Tdiv; t = p_fact; e = p_s_mul (Op2(Div,a,t)) >] -> e
+     | [< >] -> a
 and p_fact = parser
-            | [< ' Tent(n)>] -> Int(n)
-            | [< ' Tparouvre; exp = p_expr; ' Tparferme>] -> exp
-      
+     | [< ' Tent(n)>] -> Int(n)
+     | [< ' Tparouvre; exp = p_expr; ' Tparferme>] -> exp
+     | [< ' Tbool(b) >] -> Bool(b)
+     | [< ' Tident(v)>] -> Var(v)
+                         
 let ast s = p_expr (lex (Stream.of_string s))
 
-let e1 = ast "1 - 2 * ( 4 + 6 / 2 )"
-     
-let _ = eval e1
+let e1 = ast "soit x = 5 dans x + (soit x = 2 dans x) - x"
+
+let _ = eval e1 []
 let _ = print_expr e1
