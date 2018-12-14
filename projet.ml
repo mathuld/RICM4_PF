@@ -33,16 +33,15 @@ type expr =
 (* Un nom de variable est associé à une valeur *)
 type env = (string * (string list) * expr) list
 
-         
+
 (* 
  *
  *)
 let rec get (name : string) (e : env) =
   match e with
   |[] -> failwith "Identifieur inconnu"
-  |(id,params,expr)::q -> if (id = name) then (params,expr) else (get name e)
-
-
+  |(id,params,expr)::q -> if (id = name) then (params,expr) else (get name q)
+                        
 (*
  * Pourquoi 2 environnements différents ?
  * Sinon pb avec => (fun y x -> ...)  appelé avec ( f x (y+3))
@@ -69,10 +68,9 @@ and eval exp env =
   | IfThenElse (cond,x,y) -> if ((eval cond env)==1) then (eval x env) else (eval y env)
   | Call(fname,pargs) -> let (params,fexpr) = (get fname env) in
                         let envf = (load_params pargs params env []) in
-                        (eval fexpr envf)
-  | LetIn(name,params,expr,suite) -> eval suite ((name,params,expr)::env)  
-(*Evaluer les paramètres, les ajouter à l'environnement, evaluer l'identifieur v dans le nouvel environnement*)
-  
+                        (eval fexpr envf) 
+  | LetIn(name,params,expr,suite) ->  eval suite ((name,params,expr)::env)  
+(*Evaluer les paramètres, les ajouter à l'environnement, evaluer l'identifieur v dans le nouvel environnement*)                                    
                  
 let string_oper2 o =
   match o with
@@ -319,8 +317,7 @@ and p_fact = parser
                          
 let ast s = p_expr (lex (Stream.of_string s));;
 
-let e1 = ast "soit f = fun ~> 2 dans f";;
+let e1 = ast "soit f = fun x y ~> x dans f 10 10";;
 let _ = eval e1 [];;
 
 let _ = print_expr e1;;
-
