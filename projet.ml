@@ -37,21 +37,6 @@ type expr =
   | LetIn of string * expr * expr
   | Var of string
                 
-let rec eval (exp : expr) env =
-  match exp with
-  | Int n -> n
-  | Bool b -> if b then 1 else 0
-  | Op2 (Moins, x, y) -> eval x env - eval y env
-  | Op2 (Plus, x, y) -> eval x env + eval y env
-  | Op2 (Mul, x, y) -> eval x env * eval y env
-  | Op2 (Div, x, y) -> eval x env/ eval y env
-  | Op2 (Ou, x, y) -> if ((eval x env) == 1) || ((eval y env) == 1) then 1 else 0 
-  | Op2 (Et, x, y) -> if ((eval x env) == 1) && ((eval y env) == 1) then 1 else 0 
-  | Op1 (Non, x) -> if ((eval x env) == 1) then 0 else 1 
-  | Op2 (Egal, x, y) -> if ((eval x env) == (eval y env)) then 1 else 0 
-  | IfThenElse (cond,x,y) -> if ((eval cond env)==1) then (eval x env) else (eval y env)
-  | LetIn(v,x,y) -> let var = (eval x env) in eval y ((v,var)::env)
-  | Var(v) -> get v env
 
 
 let rec eval (exp : expr) env  =
@@ -65,9 +50,9 @@ let rec eval (exp : expr) env  =
   | Op2 (_,_,_) -> Bool(evalB exp env)
   | Op1(Non,x) -> Bool(evalB exp env)
   | IfThenElse (cond,x,y) -> if (evalB cond env) then (eval x env) else (eval y env)
-  | Var(v) -> Int(get v env)
+  | Var(v) -> Int(evalI exp env)
   | LetIn(v,x,y) -> let var = (eval x env) in match var with |Int(n) -> eval y ((v,n)::env)
-                                                             |Bool(n) -> failwith "Probleme de type"
+                                                             |_ -> failwith "Probleme de type : eval"
   
                            
 and evalI exp env : int=
@@ -76,8 +61,10 @@ and evalI exp env : int=
   | Op2 (Moins, x, y) -> evalI x env - evalI y env
   | Op2 (Plus, x, y) -> evalI x env + evalI y env
   | Op2 (Mul, x, y) -> evalI x env * evalI y env
-  | Op2 (Div, x, y) -> evalI x env/ evalI y env
-  | _ -> failwith "Probleme de type"
+  | Op2 (Div, x, y) -> evalI x env / evalI y env
+  | Var(v) -> get v env
+  | LetIn(_,_,_) -> let Int(var) = (eval exp env) in var 
+  | _ -> failwith "Probleme de type : evalI"
 
 and evalB exp env : bool =
   match exp with
@@ -86,7 +73,7 @@ and evalB exp env : bool =
   | Op2 (Ou, x, y) -> (evalB x env)||(evalB y env) 
   | Op2 (Et, x, y) -> (evalB x env)&&(evalB y env) 
   | Op2 (Egal, x, y) -> (eval x env) == (eval y env)
-  | _ -> failwith "Probleme de type"
+  | _ -> failwith "Probleme de type : evalB"
                  
 let string_oper2 o =
   match o with
@@ -322,7 +309,7 @@ let ast s = p_expr (lex (Stream.of_string s));;
 let e1 = ast "soit x = 5 dans x + (soit x = 2 dans x) - x";;
 
 
-let e1 = ast "x";;
+let e1 = ast "soit x = 5 dans (soit y = 2 dans x + y)";;
 
 
 let _ = eval e1 [];;
