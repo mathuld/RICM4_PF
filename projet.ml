@@ -3,6 +3,10 @@
 
 (** Environnement fonctionnel **)
 
+type typage =
+  | TBool of bool
+  | TInt of int
+             
 type oper2 = 
   | Moins
   | Plus
@@ -41,7 +45,21 @@ let rec get (name : string) (e : env) =
   match e with
   |[] -> failwith "Identifieur inconnu"
   |(id,params,expr)::q -> if (id = name) then (params,expr) else (get name q)
-                        
+
+let isInt (n : typage) = match n with
+  |TInt(n) -> n
+  |_ -> failwith "Incorrect type. Was expecting type Int"
+
+let isBool (n : typage) = match n with
+  |TBool(b) -> b
+  | _ -> failwith "Incorrect type. Was expecting type Bool"
+
+let egal e1 e2 =
+  match e1, e2 with
+  |TInt(n1),TInt(n2) -> (n1 == n2)
+  |TBool(b1),TBool(b2) -> (b1 == b2)
+  |_ -> failwith "Type mismatch during comparison"
+       
 (*
  * Pourquoi 2 environnements différents ?
  * Sinon pb avec => (fun y x -> ...)  appelé avec ( f x (y+3))
@@ -51,21 +69,27 @@ let rec load_params args params oldenv newenv =
   |[],[] -> newenv@oldenv
   |[],_  -> failwith "Not enough arguments"
   |_ ,[] -> failwith "Too many arguments"
-  |(a::qargs),(p::qparams) -> load_params qargs qparams oldenv
-                              ((p,[],Int(eval a oldenv))::newenv)
+  |(a::qargs),(p::qparams) -> 
+    let ev = (eval a oldenv) in
+        begin
+        match ev with
+        | TInt(n) -> load_params qargs qparams oldenv ((p,[],Int(n))::newenv)
+        | TBool(b) -> load_params qargs qparams oldenv ((p,[],Bool(b))::newenv)
+        end
+                  
 and eval exp env =
   match exp with
-  | Int n -> n
-  | Bool b -> if b then 1 else 0
-  | Op2 (Moins, x, y) -> eval x env - eval y env
-  | Op2 (Plus, x, y) -> eval x env + eval y env
-  | Op2 (Mul, x, y) -> eval x env * eval y env
-  | Op2 (Div, x, y) -> eval x env/ eval y env
-  | Op2 (Ou, x, y) -> if ((eval x env) == 1) || ((eval y env) == 1) then 1 else 0 
-  | Op2 (Et, x, y) -> if ((eval x env) == 1) && ((eval y env) == 1) then 1 else 0 
-  | Op1 (Non, x) -> if ((eval x env) == 1) then 0 else 1 
-  | Op2 (Egal, x, y) -> if ((eval x env) == (eval y env)) then 1 else 0 
-  | IfThenElse (cond,x,y) -> if ((eval cond env)==1) then (eval x env) else (eval y env)
+  | Int n -> TInt(n)
+  | Bool b -> TBool(b)
+  | Op2 (Moins, x, y) -> TInt((isInt (eval x env)) - (isInt (eval y env)))
+  | Op2 (Plus, x, y) -> TInt((isInt (eval x env)) + (isInt (eval y env)))
+  | Op2 (Mul, x, y) -> TInt((isInt (eval x env)) * (isInt (eval y env)))
+  | Op2 (Div, x, y) -> TInt((isInt (eval x env)) / (isInt (eval y env)))
+  | Op2 (Ou, x, y) -> TBool((isBool (eval x env)) || (isBool (eval y env))) 
+  | Op2 (Et, x, y) -> TBool((isBool (eval x env)) && (isBool (eval y env))) 
+  | Op1 (Non, x) -> TBool(not (isBool (eval x env)))
+  | Op2 (Egal, x, y) -> TBool(egal (eval x env) (eval y env))   
+  | IfThenElse (cond,x,y) -> let a = (eval cond env) in let a2 = (isBool a) in (if a2 then (eval x env) else (eval y env))
   | Call(fname,pargs) -> let (params,fexpr) = (get fname env) in
                         let envf = (load_params pargs params env []) in
                         (eval fexpr envf) 
@@ -85,8 +109,17 @@ let string_oper2 o =
 let string_oper1 o =
   match o with
   | Non -> "!"
-          
-let rec print_expr e =
+
+let rec print_strings p =
+  match p with
+  | [] -> print_string ""
+  | x::l -> print_string x ; print_string " " ;print_strings l 
+
+let rec print_exprs l =
+  match l with
+  |[] -> print_string ""
+  |x::l -> print_expr x ; print_string " " ; print_exprs l 
+and print_expr e =
   match e with
   | Int n -> print_int n
   | Bool b -> print_string (string_of_bool b)
@@ -113,11 +146,16 @@ let rec print_expr e =
      (print_string ("let ");
       print_string v;
       print_string (" = ");
-      print_expr x;
+      print_string "fun ";
+      print_strings p ;
+      print_string "-> " ;
+      print_expr x ;
       print_string (" in ");
       print_expr y)
   | Call(v,p) ->
-     (print_string v)
+      print_string v;
+      print_string " ";
+      print_exprs p
     
       (* FLOTS *)
 
@@ -317,7 +355,53 @@ and p_fact = parser
                          
 let ast s = p_expr (lex (Stream.of_string s));;
 
-let e1 = ast "soit f = fun x y ~> x dans f 10 10";;
+let e1 = ast "soit f = fun x y ~> x * y dans f 3 4 + 3";;
 let _ = eval e1 [];;
 
 let _ = print_expr e1;;
+
+
+let test1 = ast "soit x = 5 dans x + (soit x = 2 dans x) - x";;
+let _ = eval test1 [];;
+
+let test2 = ast "soit x = 5 dans (soit y = 2 dans x + y)";;
+let _ = eval test2 [];;
+
+let test3 = ast "si vrai alors 2 sinon 3";;
+let _ = print_expr test3;;
+let _ = eval test3 [];;
+
+let test4 = ast "soit x = 5 dans si faux alors si vrai || faux alors vrai sinon faux sinon x";;
+let _ = print_expr test4;;
+let _ = eval test4 [];;
+          
+let test5 = ast "soit x = 5 dans x + (si vrai && faux || vrai alors 3 sinon 2)";;
+let _ = print_expr test5;;
+let _ = eval test5 [];;
+
+let test6 = ast "soit x = 4 dans x + (si vrai alors soit x = 4 dans x sinon (si faux alors soit x = 2 dans x sinon soit x = 3 dans x))"
+let _ = print_expr test6;;
+let _ = eval test6 [];;
+
+let test7 = ast "soit var = 42 dans var + (soit vra1 = 2 dans vra1)";;
+let _ = print_expr test7;;
+let _ = eval test7 [];;
+
+let test8 = ast "soit var1 = 4 dans var1 + (si non vrai alors soit var2 = 1 dans var2 sinon soit var3 = 2 dans var3)";;
+let _ = print_expr test8;;
+let _ = eval test8 [];;
+
+let test9 = ast "non non non non vrai";;
+let _ = print_expr test9;;
+let _ = eval test9 [];;
+
+let test10 = ast "soit x = 10 dans x * (si non non vrai && non faux alors soit y = 5 dans y sinon (si vrai && non non faux alors soit z = 8 dans z sinon soit w = 4 dans w))";;
+let _ = print_expr test10;;
+let _ = eval test10 [];;
+
+let x = 5 in x + (if true && false || true then 3 else 2);;
+let x = 4 in x + (if true then let x = 4 in x else (if false then let x = 2 in x else let x = 3 in x));;
+let x = 10 in x*(if (not (not true)) && not false then let y = 5 in y else (if true && (not (not false)) then let z = 8 in z else let w = 4 in w));;
+
+let t42 = ast "si 2 alors vrai sinon faux"
+let _ = eval t42 []
