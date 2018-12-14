@@ -2,19 +2,10 @@
 #load "camlp4/camlp4o.cma" ;;
 
 (** Environnement fonctionnel **)
-(* Un nom de variable est associé à une valeur *)
-type env = (string*int) list
-
-(* Retourne la valeur de la variable s dans l'environnement l *)
-(* Si un même nom est utilisé, c'est la valeur la plus récente qui sera retournée *)
-let rec get s l =
-  match l with
-  |[] -> failwith "Identifieur inconnu"
-  |(id,va)::q -> if (id = s) then va else get s q
 
 type typage =
-  | Bool of bool
-  | Int of int
+  | Booleen of bool
+  | Integer of int
          
 type oper2 = 
   | Moins
@@ -36,43 +27,51 @@ type expr =
   | IfThenElse of expr * expr * expr 
   | LetIn of string * expr * expr
   | Var of string
+
+(* Un nom de variable est associé à une valeur *)
+type env = (string * (string list) * expr) list
+
+(* Retourne la valeur de la variable s dans l'environnement l *)
+(* Si un même nom est utilisé, c'est la valeur la plus récente qui sera retournée *)
+let rec get (name : string) (e : env) =
+  match e with
+  |[] -> failwith "Identifieur inconnu"
+|(id,params,expr)::q -> if (id = name) then (params,expr) else (get name q)
                 
+let isInt (n : typage) = match n with
+  |Integer(n) -> n
+  | _ -> failwith "not Int"
+       
+let isBool (n : typage) = match n with
+  |Booleen(b) -> b
+  | _ -> failwith "not Bool"
+       (* Un nom de variable est associé à une valeur *)
+type env = (string * (string list) * expr) list
 
+(* Retourne la valeur de la variable s dans l'environnement l *)
+(* Si un même nom est utilisé, c'est la valeur la plus récente qui sera retournée *)
+let rec get (name : string) (e : env) =
+  match e with
+  |[] -> failwith "Identifieur inconnu"
+  |(id,params,expr)::q -> if (id = name) then (params,expr) else (get name e)
+                        
+let rec eval (exp : expr) env =
+  match exp with
+  | Int(n) -> Integer(n)
+  | Bool(b) -> Booleen(b)
+  | Op2 (Moins, x, y) -> let a = (eval x env) and b = (eval y env) in let a2 = isInt a and b2 = isInt b in Integer(a2-b2)            
+  | Op2 (Plus, x, y) -> let a = (eval x env) and b = (eval y env) in let a2 = isInt a and b2 = isInt b in Integer(a2+b2) 
+  | Op2 (Mul, x, y) -> let a = (eval x env) and b = (eval y env) in let a2 = isInt a and b2 = isInt b in Integer(a2*b2) 
+  | Op2 (Div, x, y) -> let a = (eval x env) and b = (eval y env) in let a2 = isInt a and b2 = isInt b in Integer(a2/b2) 
+  | Op2 (Ou, x, y) -> let a = (eval x env) and b = (eval y env) in let a2 = isBool a and b2 = isBool b in Booleen(a2||b2) 
+  | Op2 (Et, x, y) -> let a = (eval x env) and b = (eval y env) in let a2 = isBool a and b2 = isBool b in Booleen(a2&&b2)
+  | Op2 (Egal, x, y) -> let a = (eval x env) and b = (eval y env) in let a2 = isBool a and b2 = isBool b in Booleen(a2==b2) 
+  | Op1 (Non,x) -> let a = (eval x env) in let a2 = isBool a in Booleen(not a2) 
+  | IfThenElse (cond,x,y) -> let a = eval cond env in let a2 = isBool a in (if a2 then (eval x env) else (eval y env))
+  | Var(v) -> let (_,x) = (get v env) in (eval x env)
+  | LetIn(v,x,y) -> eval y ((v,[],x)::env)
+                                                           
 
-let rec eval (exp : expr) env  =
-  match exp with
-  | Int(_) -> Int(evalI exp env)
-  | Bool(_) -> Bool(evalB exp env)
-  | Op2 (Moins, x, y)
-  | Op2 (Plus, x, y)
-  | Op2 (Mul, x, y)
-  | Op2 (Div, x, y) -> Int(evalI exp env)
-  | Op2 (_,_,_) -> Bool(evalB exp env)
-  | Op1 (Non,x) -> Bool(evalB exp env)
-  | IfThenElse (cond,x,y) -> if (evalB cond env) then (eval x env) else (eval y env)
-  | Var(v) -> Int(evalI exp env)
-  | LetIn(v,x,y) -> let var = (eval x env) in match var with |Int(n) -> eval y ((v,n)::env)
-                                                             |_ -> failwith "Probleme de type : eval"
-and evalI exp env : int=
-  match exp with
-  | Int n -> n
-  | Op2 (Moins, x, y) -> evalI x env - evalI y env
-  | Op2 (Plus, x, y) -> evalI x env + evalI y env
-  | Op2 (Mul, x, y) -> evalI x env * evalI y env
-  | Op2 (Div, x, y) -> evalI x env / evalI y env
-  | Var(v) -> get v env
-  | LetIn(_,_,_) -> let Int(var) = (eval exp env) in var
-  | IfThenElse (_,_,_) -> let Int(var) = (eval exp env) in var
-  | _ -> failwith "Probleme de type : evalI"
-
-and evalB exp env : bool =
-  match exp with
-  | Bool b -> b
-  | Op1 (Non, x) -> not(evalB x env)
-  | Op2 (Ou, x, y) -> (evalB x env)||(evalB y env) 
-  | Op2 (Et, x, y) -> (evalB x env)&&(evalB y env) 
-  | Op2 (Egal, x, y) -> (eval x env) == (eval y env)
-  | _ -> failwith "Probleme de type : evalB"
                  
 let string_oper2 o =
   match o with
@@ -304,6 +303,10 @@ and p_fact = parser
      | [< ' Tident(v)>] -> Var(v)
                          
 let ast s = p_expr (lex (Stream.of_string s));;
+
+let test0 = ast "x = 5";;
+let _ = eval test0 [];;
+let _ = print_expr test0;;
 
 let test1 = ast "soit x = 5 dans x + (soit x = 2 dans x) - x";;
 let _ = eval test1 [];;
