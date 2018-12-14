@@ -48,13 +48,11 @@ let rec eval (exp : expr) env  =
   | Op2 (Mul, x, y)
   | Op2 (Div, x, y) -> Int(evalI exp env)
   | Op2 (_,_,_) -> Bool(evalB exp env)
-  | Op1(Non,x) -> Bool(evalB exp env)
+  | Op1 (Non,x) -> Bool(evalB exp env)
   | IfThenElse (cond,x,y) -> if (evalB cond env) then (eval x env) else (eval y env)
   | Var(v) -> Int(evalI exp env)
   | LetIn(v,x,y) -> let var = (eval x env) in match var with |Int(n) -> eval y ((v,n)::env)
                                                              |_ -> failwith "Probleme de type : eval"
-  
-                           
 and evalI exp env : int=
   match exp with
   | Int n -> n
@@ -63,7 +61,8 @@ and evalI exp env : int=
   | Op2 (Mul, x, y) -> evalI x env * evalI y env
   | Op2 (Div, x, y) -> evalI x env / evalI y env
   | Var(v) -> get v env
-  | LetIn(_,_,_) -> let Int(var) = (eval exp env) in var 
+  | LetIn(_,_,_) -> let Int(var) = (eval exp env) in var
+  | IfThenElse (_,_,_) -> let Int(var) = (eval exp env) in var
   | _ -> failwith "Probleme de type : evalI"
 
 and evalB exp env : bool =
@@ -306,16 +305,44 @@ and p_fact = parser
                          
 let ast s = p_expr (lex (Stream.of_string s));;
 
-let e1 = ast "soit x = 5 dans x + (soit x = 2 dans x) - x";;
+let test1 = ast "soit x = 5 dans x + (soit x = 2 dans x) - x";;
+let _ = eval test1 [];;
 
+let test2 = ast "soit x = 5 dans (soit y = 2 dans x + y)";;
+let _ = eval test2 [];;
 
-let e1 = ast "soit x = 5 dans (soit y = 2 dans x + y)";;
+let test3 = ast "si vrai alors 2 sinon 3";;
+let _ = print_expr test3;;
+let _ = eval test3 [];;
 
+let test4 = ast "soit x = 5 dans si faux alors si vrai || faux alors vrai sinon faux sinon x";;
+let _ = print_expr test4;;
+let _ = eval test4 [];;
+          
+let test5 = ast "soit x = 5 dans x + (si vrai && faux || vrai alors 3 sinon 2)";;
+let _ = print_expr test5;;
+let _ = eval test5 [];;
 
-let _ = eval e1 [];;
-let _ = print_expr e1;;
+let test6 = ast "soit x = 4 dans x + (si vrai alors soit x = 4 dans x sinon (si faux alors soit x = 2 dans x sinon soit x = 3 dans x))"
+let _ = print_expr test6;;
+let _ = eval test6 [];;
 
+let test7 = ast "soit var = 42 dans var + (soit vra1 = 2 dans vra1)";;
+let _ = print_expr test7;;
+let _ = eval test7 [];;
 
-let e1 = ast "vrai";;
-let _ = eval e1 [];;
+let test8 = ast "soit var1 = 4 dans var1 + (si non vrai alors soit var2 = 1 dans var2 sinon soit var3 = 2 dans var3)";;
+let _ = print_expr test8;;
+let _ = eval test8 [];;
 
+let test9 = ast "non non non non vrai";;
+let _ = print_expr test9;;
+let _ = eval test9 [];;
+
+let test10 = ast "soit x = 10 dans x * (si non non vrai && non faux alors soit y = 5 dans y sinon (si vrai && non non faux alors soit z = 8 dans z sinon soit w = 4 dans w))";;
+let _ = print_expr test10;;
+let _ = eval test10 [];;
+
+let x = 5 in x + (if true && false || true then 3 else 2);;
+let x = 4 in x + (if true then let x = 4 in x else (if false then let x = 2 in x else let x = 3 in x));;
+let x = 10 in x*(if (not (not true)) && not false then let y = 5 in y else (if true && (not (not false)) then let z = 8 in z else let w = 4 in w));;
