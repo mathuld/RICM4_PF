@@ -69,8 +69,8 @@ and eval exp env =
   | IfThenElse (cond,x,y) -> if ((eval cond env)==1) then (eval x env) else (eval y env)
   | Call(fname,pargs) -> let (params,fexpr) = (get fname env) in
                         let envf = (load_params pargs params env []) in
-                        (eval fexpr envf)
-  | LetIn(name,params,expr,suite) -> eval suite ((name,params,expr)::env)  
+                        (eval fexpr envf) 
+  | LetIn(name,params,expr,suite) ->  eval suite ((name,params,expr)::env)  
 (*Evaluer les paramètres, les ajouter à l'environnement, evaluer l'identifieur v dans le nouvel environnement*)
   
                  
@@ -319,8 +319,7 @@ and p_fact = parser
                          
 let ast s = p_expr (lex (Stream.of_string s));;
 
-let e1 = ast "soit f = fun ~> 2 dans f";;
+let e1 = ast "soit f = fun x y ~> x dans f 10 10";;
 let _ = eval e1 [];;
 
 let _ = print_expr e1;;
-
