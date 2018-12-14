@@ -278,9 +278,10 @@ and p_fact = parser
      | [< ' Tbool(b) >] -> Bool(b)
      | [< ' Tident(v)>] -> Var(v)
                          
-let ast s = p_expr (lex (Stream.of_string s))
+let ast s = p_expr (lex (Stream.of_string s));;
 
-let e1 = ast "soit x = 5 dans x + (soit x = 2 dans x) - x"
+let e1 = ast "soit x = 5 dans x + (soit x = 2 dans x) - x";;
 
-let _ = eval e1 []
-let _ = print_expr e1
+let _ = eval e1 [];;
+let _ = print_expr e1;;
+
