@@ -1,17 +1,8 @@
 #load "dynlink.cma";;
-#load "camlp4/camlp4o.cma" ;;
+#load "camlp4/camlp4o.cma"
 
 (** Environnement fonctionnel **)
-(* Un nom de variable est associé à une valeur *)
-type env = (string*int) list
 
-(* Retourne la valeur de la variable s dans l'environnement l *)
-(* Si un même nom est utilisé, c'est la valeur la plus récente qui sera retournée *)
-let rec get s l =
-  match l with
-  |[] -> failwith "Identifieur inconnu"
-  |(id,va)::q -> if (id = s) then va else get s q 
-         
 type oper2 = 
   | Moins
   | Plus
@@ -31,9 +22,38 @@ type expr =
   | Bool of bool
   | IfThenElse of expr * expr * expr 
   | LetIn of string * expr * expr
-  | Var of string
-                
-let rec eval exp env =
+  | FunDecl of (string list) * expr 
+  | VarCall of string
+  | FunCall of string * (expr list)
+
+(* Un nom de variable est associé à une valeur *)
+type mem = Var of string*int | Fun of string * (string list) * expr
+type env = mem list
+                                                 
+(* Retourne la valeur associée à la variable v dans l'environnement l *)
+(* Si un même nom est utilisé, c'est la valeur la plus récente qui sera retournée *)
+let rec getVar v l =
+  match l with
+  |[] -> failwith "Identifieur inconnu"
+  |Var(id,va)::q -> if (id = v) then va else getVar v q 
+  |_::q ->  getVar v q
+
+(* Retourne les noms de paramètre et le corps de la fonction f dans l'environnement l*)
+let rec getFun f l =
+  match l with
+  |[] -> failwith "Identifieur inconnu"
+  |Fun(id,p,c)::q -> if (id = f) then (p,c) else getFun f l
+  |_::q -> getFun f l
+
+
+let rec load_params args params oldenv newenv =
+  match args,params with
+  |[],[] -> newenv@oldenv
+  |[],_  -> failwith "Not enough arguments"
+  |_ ,[] -> failwith "Too many arguments"
+  |(a::qargs),(p::qparams) -> load_params qargs qparams oldenv ( Var(p,(eval a oldenv))::newenv)
+
+and eval exp env =
   match exp with
   | Int n -> n
   | Bool b -> if b then 1 else 0
@@ -45,9 +65,17 @@ let rec eval exp env =
   | Op2 (Et, x, y) -> if ((eval x env) == 1) && ((eval y env) == 1) then 1 else 0 
   | Op1 (Non, x) -> if ((eval x env) == 1) then 0 else 1 
   | Op2 (Egal, x, y) -> if ((eval x env) == (eval y env)) then 1 else 0 
-  | IfThenElse (cond,x,y) -> if ((eval cond env)==1) then (eval x env) else (eval y env)
-  | LetIn(v,x,y) -> let var = (eval x env) in eval y ((v,var)::env)
-  | Var(v) -> get v env
+  | IfThenElse (cond,x,y) -> if ((eval cond env)==1) then (eval x env) else (eval y env)         
+  | VarCall(v) -> (getVar v env)
+  | FunCall(f,pargs) -> let (params,fexpr) = (getFun f env) in
+                        let envf = (load_params pargs params env []) in
+                        (eval fexpr envf)
+  | FunDecl(params,expr) -> failwith "Function declared without name"
+  | LetIn(name,vexpr,suite) -> match vexpr with
+          | FunDecl(params,expr) -> eval suite (Fun(name,params,expr)::env)
+          | _ -> let value = (eval vexpr env) in eval suite (Var(name,value)::env)  
+(*Evaluer les paramètres, les ajouter à l'environnement, evaluer l'identifieur v dans le nouvel environnement*)
+  
                  
 let string_oper2 o =
   match o with
@@ -93,9 +121,13 @@ let rec print_expr e =
       print_expr x;
       print_string (" in ");
       print_expr y)
-  | Var(v) ->
+  | VarCall(v) ->
      (print_string v)
-
+  | FunDecl(param,expr) ->
+     (print_string "funTODO")
+  | FunCall(_) ->
+     (print_string "TODO")
+     
       (* FLOTS *)
 
 (* Pour le test *)
@@ -127,11 +159,10 @@ let rec lettres_to_bytes (l : char list) (i : int) (b : bytes) : string =
   | []   -> Bytes.to_string b
   | x::q -> Bytes.set b i x ; lettres_to_bytes q (i+1) b  
 
-let ident c = parser
-  | [< l = lettres>] -> 
+let ident = parser
+  | [< c = lettre ; l = lettres>] -> 
   let b = Bytes.make ((List.length l)+1) c in
   (lettres_to_bytes l 1 b)
-
 
 (* Type des lexèmes *)
 type token = 
@@ -153,6 +184,9 @@ type token =
   | Tident of string
   | Tsoit
   | Tdans
+  | Tfun
+  | Tfleche
+  | Tparam of string list
 (* 
 Pour passer d'un flot de caractères à un flot de lexèmes,
 on commence par une fonction qui analyse lexicalement les
@@ -167,7 +201,7 @@ type 'a option =
   | None           (* indique l'absence de valeur *)
   | Some of 'a     (* indique la présence de valeur *)
 *)
-
+            
 let id_to_token id =
   match id with
   | "vrai" -> Tbool(true)
@@ -178,32 +212,36 @@ let id_to_token id =
   | "sinon" -> Tsinon
   | "soit" -> Tsoit
   | "dans" -> Tdans
+  | "fun" -> Tfun
   | str -> Tident(str) 
 
 let rec next_token = parser
   | [< '  ' '|'\n'; tk = next_token >] -> tk (* élimination des espaces *)
   | [< '  '0'..'9' as c; n = horner (valchiffre c) >] -> Some (Tent (n))
+  | [< '  '~';'  '>'>] -> Some (Tfleche)
   | [< '  '-' >] -> Some (Tmoins)
   | [< '  '+' >] -> Some (Tplus)
   | [< '  '(' >] -> Some (Tparouvre)
   | [< '  ')' >] -> Some (Tparferme)
   | [< '  '*' >] -> Some (Tmul)
   | [< '  '/' >] -> Some (Tdiv)
+  | [< '  '=' >] -> Some (Tegal)
   | [< '  '&'; '  '&'>] -> Some (Tet)
   | [< '  '|'; '  '|'>] -> Some (Tou)
-  | [< '  '='>] -> Some (Tegal)
-  | [<  l = lettre; s = (ident l) >] -> Some (id_to_token s)
+  | [< s = ident >] -> Some (id_to_token s)
   | [< >] -> None
 
 (* tests *)
-let s = Stream.of_string "45 - - 089"
+let s = Stream.of_string "soit f = fun x ~> x * x dans f 2"
 let tk1 = next_token s
 let tk2 = next_token s
 let tk3 = next_token s
 let tk4 = next_token s
 let tk5 = next_token s
 let tk6 = next_token s
+let _ = next_token s
 
+      
 (* L'analyseur lexical parcourt récursivement le flot de caractères s
    en produisant un flot de lexèmes *)
 let rec tokens s =
@@ -214,7 +252,7 @@ let rec tokens s =
 let lex s = tokens s
 
 (* tests *)
-let s = Stream.of_string "45 - - 089"
+let s = Stream.of_string "soit f = fun x -> x*x dans f 2"
 let stk = lex s
 let ltk = list_of_stream stk  
 
@@ -241,11 +279,16 @@ let ltk1 = list_of_stream (lex (Stream.of_string "356 - 10 - 4"))
    bon parenthèsage de l'expression :
    41 - 20 - 1 est compris comme (41 - 20) - 1, non pas 41 - (20 - 1)
 *)
-
 let rec p_expr = parser
-               | [< 'Tsi ; e1 = p_expr ; 'Talors ; e2 = p_expr ; 'Tsinon ; e3 = p_expr >] -> IfThenElse (e1,e2,e3)
-               | [< 'Tsoit ; 'Tident(v) ; 'Tegal ; e1 = p_expr ; 'Tdans ; e2 = p_expr >] -> LetIn(v,e1,e2)
-     | [< c = p_conj ; sd = p_s_disj c >] -> sd                                      
+     | [< 'Tsi ; e1 = p_expr ; 'Talors ; e2 = p_expr ; 'Tsinon ; e3 = p_expr >] -> IfThenElse (e1,e2,e3)
+     | [< 'Tsoit ; 'Tident(v) ; 'Tegal ; f = p_fun ; 'Tdans ; e2 = p_expr >] -> LetIn(v,f,e2)
+     | [< c = p_conj ; sd = p_s_disj c >] -> sd
+and p_fun = parser
+     | [< 'Tfun ; p = p_param ; 'Tfleche ; x = p_expr>] -> FunDecl(p,x)
+     | [< e = p_expr>] -> e
+and p_param = parser
+     | [< 'Tident(x) ; l = p_param>] -> x::l
+     | [< >] -> []
 and p_s_disj c = parser
      | [< 'Tou ; p = p_conj ; sd = p_s_disj (Op2(Ou,c,p))>] -> sd
      | [< >] -> c
@@ -272,16 +315,19 @@ and p_s_mul a = parser
      | [< ' Tmul; t = p_fact; e = p_s_mul (Op2(Mul,a,t)) >] -> e
      | [< ' Tdiv; t = p_fact; e = p_s_mul (Op2(Div,a,t)) >] -> e
      | [< >] -> a
+and p_s_expr = parser
+     | [<x = p_expr ; l = p_s_expr>] -> x::l
+     | [< >] -> []
 and p_fact = parser
      | [< ' Tent(n)>] -> Int(n)
-     | [< ' Tparouvre; exp = p_expr; ' Tparferme>] -> exp
+     | [< ' Tparouvre ; exp = p_expr; ' Tparferme>] -> exp
      | [< ' Tbool(b) >] -> Bool(b)
-     | [< ' Tident(v)>] -> Var(v)
+     | [< ' Tident(v) ; se = p_s_expr>] -> if (se = []) then VarCall(v) else FunCall(v,se)
                          
 let ast s = p_expr (lex (Stream.of_string s));;
 
-let e1 = ast "soit x = 5 dans x + (soit x = 2 dans x) - x";;
-
+let e1 = ast "soit f = fun ~> 2 dans f";;
 let _ = eval e1 [];;
+
 let _ = print_expr e1;;
 
