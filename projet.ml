@@ -10,7 +10,11 @@ type env = (string*int) list
 let rec get s l =
   match l with
   |[] -> failwith "Identifieur inconnu"
-  |(id,va)::q -> if (id = s) then va else get s q 
+  |(id,va)::q -> if (id = s) then va else get s q
+
+type typage =
+  | Bool of b
+  | Int of int
          
 type oper2 = 
   | Moins
@@ -48,6 +52,38 @@ let rec eval exp env =
   | IfThenElse (cond,x,y) -> if ((eval cond env)==1) then (eval x env) else (eval y env)
   | LetIn(v,x,y) -> let var = (eval x env) in eval y ((v,var)::env)
   | Var(v) -> get v env
+
+let rec eval exp env  =
+  match exp with
+  | Int(_) -> Int(evalI exp env)
+  | Bool(_) -> Bool(evalB exp env)
+  | Op2 (Moins, x, y)
+  | Op2 (Plus, x, y)
+  | Op2 (Mul, x, y)
+  | Op2 (Div, x, y) -> Int(evalI exp env)
+  | Op2 (_,_,_) -> Bool(evalB exp env)
+  | Op1(Non,x) -> Bool(evalB exp env)
+  | IfThenElse (cond,x,y) -> if (evalB cond env) then (eval x env) else (eval y env)
+  | LetIn(v,x,y) -> let var = (eval x env) in match var with |Int(n) -> eval y ((v,n)::env)
+                                                             |Bool(n) -> failwith"Probleme de type"
+  | Var(v) -> Int(get v env)
+                           
+and evalI exp env : int=
+  match exp with
+  | Int n -> n
+  | Op2 (Moins, x, y) -> evalI x env - evalI y env
+  | Op2 (Plus, x, y) -> evalI x env + evalI y env
+  | Op2 (Mul, x, y) -> evalI x env * evalI y env
+  | Op2 (Div, x, y) -> evalI x env/ evalI y env
+
+and evalB exp env : bool =
+  match exp with
+  | Bool b -> b
+  | Op1 (Non, x) -> not(evalB x env)
+  | Op2 (Ou, x, y) -> (evalB x env)||(evalB y env) 
+  | Op2 (Et, x, y) -> (evalB x env)&&(evalB y env) 
+  | Op1 (Non, x) -> not(evalB x env) 
+  | Op2 (Egal, x, y) -> (eval x env) == (eval y env)
                  
 let string_oper2 o =
   match o with
@@ -282,6 +318,14 @@ let ast s = p_expr (lex (Stream.of_string s));;
 
 let e1 = ast "soit x = 5 dans x + (soit x = 2 dans x) - x";;
 
-let _ = eval e1 [];;
+
+let e1 = ast "x";;
+
+
+let _ = eval e1 [("x",5)];;
 let _ = print_expr e1;;
+
+
+let e1 = ast "vrai";;
+let _ = eval e1 [];;
 
