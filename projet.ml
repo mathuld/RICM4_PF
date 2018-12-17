@@ -343,11 +343,14 @@ let id_to_token id =
   | "fun" -> Tfun
   | str -> Tident(str) 
 
+let fleche = parser
+           |[<'  '>' >] -> true
+           |[< >] -> false
+         
 let rec next_token = parser
   | [< '  ' '|'\n'; tk = next_token >] -> tk (* élimination des espaces *)
   | [< '  '0'..'9' as c; n = horner (valchiffre c) >] -> Some (Tent (n))
-  | [< '  '~';'  '>'>] -> Some (Tfleche) (* Flèche implémentée avec un ~>*)
-  | [< '  '-' >] -> Some (Tmoins)
+  | [< '  '-'; b = fleche >] -> if b then Some (Tfleche) else Some(Tmoins)
   | [< '  '+' >] -> Some (Tplus)
   | [< '  '(' >] -> Some (Tparouvre)
   | [< '  ')' >] -> Some (Tparferme)
@@ -485,7 +488,7 @@ let ast s = p_expr (lex (Stream.of_string s))
 
 (** Tests **)
 
-let e1 = ast "soit f = fun x y ~> x * y dans (f 3 4) + 3"
+let e1 = ast "soit f = fun x y -> x - y dans (f 3 4) + 3"
 let _ = eval e1 []
 
 let _ = print_expr e1
@@ -546,14 +549,14 @@ let e = ast "let x = 2 in x"
 let _ = eval e []
       
 (* Exceptions d'arguments*)
-let e = ast "soit f = fun a b c ~> a+b*c dans f 1 2"
+let e = ast "soit f = fun a b c -> a+b*c dans f 1 2"
 let _ = eval e []
 
-let e = ast "soit f = fun a ~> a dans f 1 2"
+let e = ast "soit f = fun a -> a dans f 1 2"
 let _ = eval e []
 
       
 (* Les variables sont des fonctions *)
 let var1 = eval (ast "soit f = 2 dans f") []
-let var1fun = eval (ast "soit f = fun ~> 2 dans f") []
+let var1fun = eval (ast "soit f = fun -> 2 dans f") []
 let _ = assert(var1 = var1fun)
